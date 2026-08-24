@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Last-Mile Delivery Tracker</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    section { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; }
+    input, select, button, textarea { margin: 4px; padding: 6px; }
+    pre { background: #f4f4f4; padding: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Last-Mile Delivery Tracker</h1>
+
+  <section>
+    <h2>Auth</h2>
+    <input id="name" placeholder="name" />
+    <input id="email" placeholder="email" />
+    <input id="password" placeholder="password" type="password" />
+    <button onclick="register()">Register (Customer)</button>
+    <button onclick="login()">Login</button>
+    <p id="authState"></p>
+  </section>
+
+  <section>
+    <h2>Customer: Price Preview + Create Order</h2>
+    <input id="pickupAddress" placeholder="pickup address" size="30" />
+    <input id="pickupPincode" placeholder="pickup pincode" />
+    <input id="dropAddress" placeholder="drop address" size="30" />
+    <input id="dropPincode" placeholder="drop pincode" />
+    <input id="length" type="number" placeholder="L cm" />
+    <input id="width" type="number" placeholder="W cm" />
+    <input id="height" type="number" placeholder="H cm" />
+    <input id="weight" type="number" placeholder="actual kg" step="0.01" />
+    <select id="orderType"><option>B2B</option><option>B2C</option></select>
+    <select id="paymentType"><option>Prepaid</option><option>COD</option></select>
+    <input id="scheduledDate" type="date" />
+    <button onclick="previewPrice()">Preview Price</button>
+    <button onclick="createOrder()">Confirm Order</button>
+    <pre id="pricing"></pre>
+  </section>
+
+  <section>
+    <h2>Customer: Live Tracking</h2>
+    <input id="trackOrderId" placeholder="order id" />
+    <button onclick="trackOrder()">Track</button>
+    <pre id="tracking"></pre>
+  </section>
+
+  <section>
+    <h2>Failed Delivery Reschedule</h2>
+    <input id="rescheduleOrderId" placeholder="order id" />
+    <input id="rescheduleDate" type="date" />
+    <textarea id="rescheduleReason" placeholder="reason"></textarea>
+    <button onclick="rescheduleOrder()">Reschedule</button>
+    <pre id="rescheduleOut"></pre>
+  </section>
+
+  <section>
+    <h2>Admin: Filter Orders + Override Status</h2>
+    <input id="filterStatus" placeholder="status" />
+    <input id="filterZone" placeholder="zone id" />
+    <input id="filterAgent" placeholder="agent id" />
+    <button onclick="adminOrders()">Load</button>
+    <br/>
+    <input id="overrideOrderId" placeholder="order id" />
+    <select id="overrideStatus">
+      <option>Pending</option><option>Assigned</option><option>Picked Up</option>
+      <option>In Transit</option><option>Out for Delivery</option><option>Delivered</option><option>Failed</option>
+    </select>
+    <button onclick="overrideOrderStatus()">Override</button>
+    <pre id="adminOut"></pre>
+  </section>
+
+<script>
+let token = '';
+let user = null;
+
+function headers() {
+  return token ? { 'Content-Type': 'application/json', Authorization: token } : { 'Content-Type': 'application/json' };
+}
+
+function payload() {
+  return {
+    pickupAddress: pickupAddress.value,
+    pickupPincode: pickupPincode.value,
+    dropAddress: dropAddress.value,
+    dropPincode: dropPincode.value,
+    packageLengthCm: Number(length.value),
+    packageWidthCm: Number(width.value),
+    packageHeightCm: Number(height.value),
+    actualWeightKg: Number(weight.value),
+    orderType: orderType.value,
+    paymentType: paymentType.value,
+    scheduledDeliveryDate: scheduledDate.value || null,
+  };
+}
+
+async function register() {
+  const res = await fetch('/api/auth/register', { method: 'POST', headers: headers(), body: JSON.stringify({ name: name.value, email: email.value, password: password.value }) });
+  const data = await res.json();
+  if (res.ok) { token = data.token; user = data.user; }
+  authState.textContent = JSON.stringify(data, null, 2);
+}
+
+async function login() {
+  const res = await fetch('/api/auth/login', { method: 'POST', headers: headers(), body: JSON.stringify({ email: email.value, password: password.value }) });
+  const data = await res.json();
+  if (res.ok) { token = data.token; user = data.user; }
+  authState.textContent = JSON.stringify(data, null, 2);
+}
+
+async function previewPrice() {
+  const res = await fetch('/api/orders/price-preview', { method: 'POST', headers: headers(), body: JSON.stringify(payload()) });
+  pricing.textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function createOrder() {
+  const res = await fetch('/api/orders', { method: 'POST', headers: headers(), body: JSON.stringify(payload()) });
+  pricing.textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function trackOrder() {
+  const res = await fetch(`/api/orders/${trackOrderId.value}/tracking`, { headers: headers() });
+  tracking.textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function rescheduleOrder() {
+  const res = await fetch(`/api/orders/${rescheduleOrderId.value}/reschedule`, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ newDeliveryDate: rescheduleDate.value, reason: rescheduleReason.value })
+  });
+  rescheduleOut.textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function adminOrders() {
+  const params = new URLSearchParams();
+  if (filterStatus.value) params.append('status', filterStatus.value);
+  if (filterZone.value) params.append('zoneId', filterZone.value);
+  if (filterAgent.value) params.append('agentId', filterAgent.value);
+  const res = await fetch(`/api/admin/dashboard/orders?${params}`, { headers: headers() });
+  adminOut.textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function overrideOrderStatus() {
+  const res = await fetch(`/api/admin/orders/${overrideOrderId.value}/override-status`, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ status: document.getElementById('overrideStatus').value, note: 'Overridden from demo UI' })
+  });
+  adminOut.textContent = JSON.stringify(await res.json(), null, 2);
+}
+</script>
+</body>
+</html>
